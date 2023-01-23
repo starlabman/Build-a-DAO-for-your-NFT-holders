@@ -3,8 +3,6 @@ pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-// We will add the Interfaces here
-
 /**
  * Interface for the FakeNFTMarketplace
  */
@@ -24,7 +22,6 @@ interface IFakeNFTMarketplace {
 
 /**
  * Minimal interface for CryptoDevsNFT containing only two functions
- * that we are interested in
  */
 interface ICryptoDevsNFT {
     /// @dev balanceOf returns the number of NFTs owned by the given address
@@ -36,14 +33,13 @@ interface ICryptoDevsNFT {
     /// @param owner - address to fetch the NFT TokenID for
     /// @param index - index of NFT in owned tokens array to fetch
     /// @return Returns the TokenID of the NFT
-    function tokenOfOwnerByIndex(
-        address owner,
-        uint256 index
-    ) external view returns (uint256);
+    function tokenOfOwnerByIndex(address owner, uint256 index)
+        external
+        view
+        returns (uint256);
 }
 
 contract CryptoDevsDAO is Ownable {
-    // We will write contract code here
     IFakeNFTMarketplace nftMarketplace;
     ICryptoDevsNFT cryptoDevsNFT;
 
@@ -63,41 +59,22 @@ contract CryptoDevsDAO is Ownable {
         mapping(uint256 => bool) voters;
     }
 
+    // Create an enum named Vote containing possible options for a vote
+    enum Vote {
+        YAY,
+        NAY
+    }
+
     // Create a mapping of ID to Proposal
     mapping(uint256 => Proposal) public proposals;
     // Number of proposals that have been created
     uint256 public numProposals;
-
-    // Create a payable constructor which initializes the contract
-    // instances for FakeNFTMarketplace and CryptoDevsNFT
-    // The payable allows this constructor to accept an ETH deposit when it is being deployed
-    constructor(address _nftMarketplace, address _cryptoDevsNFT) payable {
-        nftMarketplace = IFakeNFTMarketplace(_nftMarketplace);
-        cryptoDevsNFT = ICryptoDevsNFT(_cryptoDevsNFT);
-    }
 
     // Create a modifier which only allows a function to be
     // called by someone who owns at least 1 CryptoDevsNFT
     modifier nftHolderOnly() {
         require(cryptoDevsNFT.balanceOf(msg.sender) > 0, "NOT_A_DAO_MEMBER");
         _;
-    }
-
-    /// @dev createProposal allows a CryptoDevsNFT holder to create a new proposal in the DAO
-    /// @param _nftTokenId - the tokenID of the NFT to be purchased from FakeNFTMarketplace if this proposal passes
-    /// @return Returns the proposal index for the newly created proposal
-    function createProposal(
-        uint256 _nftTokenId
-    ) external nftHolderOnly returns (uint256) {
-        require(nftMarketplace.available(_nftTokenId), "NFT_NOT_FOR_SALE");
-        Proposal storage proposal = proposals[numProposals];
-        proposal.nftTokenId = _nftTokenId;
-        // Set the proposal's voting deadline to be (current time + 5 minutes)
-        proposal.deadline = block.timestamp + 5 minutes;
-
-        numProposals++;
-
-        return numProposals - 1;
     }
 
     // Create a modifier which only allows a function to be
@@ -108,42 +85,6 @@ contract CryptoDevsDAO is Ownable {
             "DEADLINE_EXCEEDED"
         );
         _;
-    }
-
-    // Create an enum named Vote containing possible options for a vote
-    enum Vote {
-        YAY, // YAY = 0
-        NAY // NAY = 1
-    }
-
-    /// @dev voteOnProposal allows a CryptoDevsNFT holder to cast their vote on an active proposal
-    /// @param proposalIndex - the index of the proposal to vote on in the proposals array
-    /// @param vote - the type of vote they want to cast
-    function voteOnProposal(
-        uint256 proposalIndex,
-        Vote vote
-    ) external nftHolderOnly activeProposalOnly(proposalIndex) {
-        Proposal storage proposal = proposals[proposalIndex];
-
-        uint256 voterNFTBalance = cryptoDevsNFT.balanceOf(msg.sender);
-        uint256 numVotes = 0;
-
-        // Calculate how many NFTs are owned by the voter
-        // that haven't already been used for voting on this proposal
-        for (uint256 i = 0; i < voterNFTBalance; i++) {
-            uint256 tokenId = cryptoDevsNFT.tokenOfOwnerByIndex(msg.sender, i);
-            if (proposal.voters[tokenId] == false) {
-                numVotes++;
-                proposal.voters[tokenId] = true;
-            }
-        }
-        require(numVotes > 0, "ALREADY_VOTED");
-
-        if (vote == Vote.YAY) {
-            proposal.yayVotes += numVotes;
-        } else {
-            proposal.nayVotes += numVotes;
-        }
     }
 
     // Create a modifier which only allows a function to be
@@ -161,11 +102,72 @@ contract CryptoDevsDAO is Ownable {
         _;
     }
 
+    // Create a payable constructor which initializes the contract
+    // instances for FakeNFTMarketplace and CryptoDevsNFT
+    // The payable allows this constructor to accept an ETH deposit when it is being deployed
+    constructor(address _nftMarketplace, address _cryptoDevsNFT) payable {
+        nftMarketplace = IFakeNFTMarketplace(_nftMarketplace);
+        cryptoDevsNFT = ICryptoDevsNFT(_cryptoDevsNFT);
+    }
+
+    /// @dev createProposal allows a CryptoDevsNFT holder to create a new proposal in the DAO
+    /// @param _nftTokenId - the tokenID of the NFT to be purchased from FakeNFTMarketplace if this proposal passes
+    /// @return Returns the proposal index for the newly created proposal
+    function createProposal(uint256 _nftTokenId)
+        external
+        nftHolderOnly
+        returns (uint256)
+    {
+        require(nftMarketplace.available(_nftTokenId), "NFT_NOT_FOR_SALE");
+        Proposal storage proposal = proposals[numProposals];
+        proposal.nftTokenId = _nftTokenId;
+        // Set the proposal's voting deadline to be (current time + 5 minutes)
+        proposal.deadline = block.timestamp + 5 minutes;
+
+        numProposals++;
+
+        return numProposals - 1;
+    }
+
+    /// @dev voteOnProposal allows a CryptoDevsNFT holder to cast their vote on an active proposal
+    /// @param proposalIndex - the index of the proposal to vote on in the proposals array
+    /// @param vote - the type of vote they want to cast
+    function voteOnProposal(uint256 proposalIndex, Vote vote)
+        external
+        nftHolderOnly
+        activeProposalOnly(proposalIndex)
+    {
+        Proposal storage proposal = proposals[proposalIndex];
+
+        uint256 voterNFTBalance = cryptoDevsNFT.balanceOf(msg.sender);
+        uint256 numVotes = 0;
+
+        // Calculate how many NFTs are owned by the voter
+        // that haven't already been used for voting on this proposal
+        for (uint256 i = 0; i < voterNFTBalance; i++) {
+            // console.log(cryptoDevsNFT.tokenOfOwnerByIndex(msg.sender, i)),
+            uint256 tokenId = cryptoDevsNFT.tokenOfOwnerByIndex(msg.sender, i);
+            if (proposal.voters[tokenId] == false) {
+                numVotes++;
+                proposal.voters[tokenId] = true;
+            }
+        }
+        require(numVotes > 0, "ALREADY_VOTED");
+
+        if (vote == Vote.YAY) {
+            proposal.yayVotes += numVotes;
+        } else {
+            proposal.nayVotes += numVotes;
+        }
+    }
+
     /// @dev executeProposal allows any CryptoDevsNFT holder to execute a proposal after it's deadline has been exceeded
     /// @param proposalIndex - the index of the proposal to execute in the proposals array
-    function executeProposal(
-        uint256 proposalIndex
-    ) external nftHolderOnly inactiveProposalOnly(proposalIndex) {
+    function executeProposal(uint256 proposalIndex)
+        external
+        nftHolderOnly
+        inactiveProposalOnly(proposalIndex)
+    {
         Proposal storage proposal = proposals[proposalIndex];
 
         // If the proposal has more YAY votes than NAY votes
@@ -180,13 +182,11 @@ contract CryptoDevsDAO is Ownable {
 
     /// @dev withdrawEther allows the contract owner (deployer) to withdraw the ETH from the contract
     function withdrawEther() external onlyOwner {
-        uint256 amount = address(this).balance;
-        require(amount > 0, "Nothing to withdraw; contract balance empty");
-        payable(owner()).transfer(amount);
+        payable(owner()).transfer(address(this).balance);
     }
 
-    // The following two functions allow the contract to accept ETH deposits
-    // directly from a wallet without calling a function
+    // The following two functions allow the contract to accept ETH deposits directly
+    // from a wallet without calling a function
     receive() external payable {}
 
     fallback() external payable {}
